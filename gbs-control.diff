@@ -1,0 +1,180 @@
+--- C:\Temp\gbs-control\gbs-control.ino.orig	2021-05-12 12:49:38.000000000 +0200
++++ C:\Temp\gbs-control\gbs-control.ino	2021-05-21 11:58:44.548000000 +0200
+@@ -57,6 +57,10 @@
+ Pinger pinger; // pinger global object to aid debugging WiFi issues
+ #endif
+ 
++// Optional:
++// Enable AVR based OLED (and IR Receiver)
++#define ENABLE_OLED
++
+ typedef TV5725<GBS_ADDR> GBS;
+ 
+ static unsigned long lastVsyncLock = millis();
+@@ -174,6 +178,9 @@
+   uint8_t continousStableCounter;
+   uint8_t failRetryAttempts;
+   uint8_t presetID;
++#ifdef ENABLE_OLED
++  uint8_t presetBaseID;
++#endif
+   uint8_t HPLLState;
+   uint8_t medResLineCount;
+   uint8_t osr;
+@@ -3913,6 +3920,9 @@
+   else                                                      SerialM.print(F("bypass"));
+ 
+   if (isCustomPreset) {
++#ifdef ENABLE_OLED
++    rto->presetBaseID = rto->presetID;
++#endif
+     rto->presetID = 9; // overwrite to "custom" after printing original id (for webui)
+   }
+   if (rto->outModeHdBypass)
+@@ -6941,7 +6951,11 @@
+   rto->webServerEnabled = true;
+   rto->webServerStarted = false; // make sure this is set
+ 
++#ifdef ENABLE_OLED
++  Serial.begin(19200);
++#else
+   Serial.begin(115200); // Arduino IDE Serial Monitor requires the same 115200 bauds!
++#endif
+   Serial.setTimeout(10);
+ 
+   // millis() at this point: typically 65ms
+@@ -7419,7 +7433,11 @@
+   // is there a command from Terminal or web ui?
+   // Serial takes precedence
+   if (Serial.available()) {
++#ifdef ENABLE_OLED
++    typeTwoCommand = Serial.read();
++#else
+     typeOneCommand = Serial.read();
++#endif
+   }
+   else if (inputStage > 0) {
+     // multistage with no more data
+@@ -8661,6 +8679,10 @@
+     }
+   }
+ #endif
++
++#ifdef ENABLE_OLED
++  outputDisplay();
++#endif
+ }
+ 
+ #if defined(ESP8266)
+@@ -8669,6 +8691,16 @@
+ 
+ void handleType2Command(char argument) {
+   switch (argument) {
++#ifdef ENABLE_OLED
++  case 'Y':
++    SerialM.println(F("scale+")); 
++    scaleHorizontal(2, true);
++    break;
++  case 'Z':
++    SerialM.println(F("scale-")); 
++    scaleHorizontal(2, false);
++    break;
++#endif
+   case '0':
+     SerialM.print(F("pal force 60hz "));
+     if (uopt->PalForce60 == 0) {
+@@ -9728,3 +9760,94 @@
+ }
+ 
+ #endif
++
++#ifdef ENABLE_OLED
++
++static char output[27 + 1] = "";
++static unsigned long lastoutputtime = 0;
++
++void outputDisplay() {
++  if (millis() - lastoutputtime >= 200) {
++    char outputtemp[27 + 1] = "";
++
++    if (rto->presetID == 0x21 || rto->presetID == 0x22) {
++      sprintf(outputtemp, "@@passthrough\n");
++    }
++    else if (rto->boardHasPower == true && rto->sourceDisconnected == false && rto->noSyncCounter < 2) {
++      char type;
++      int8_t interlace = -1;
++      switch (rto->videoStandardInput) {
++        case 1:
++        case 2: {
++          uint16_t v_period = GBS::VPERIOD_IF::read();
++          if (v_period == 521 || v_period == 523 || v_period == 525 || v_period == 623 || v_period == 625 || v_period == 627) {
++            type = 'p';
++          }
++          else {
++            type = 'i';
++            interlace = rto->motionAdaptiveDeinterlaceActive;
++          } }
++          break;
++        case 3:
++        case 4:
++        case 5:
++        case 7:
++        case 8: {
++          type = 'p'; }
++          break;
++        case 6: {
++          type = 'i';
++          interlace = rto->motionAdaptiveDeinterlaceActive; }
++          break;
++      }
++      
++      float sourcerate = getSourceFieldRate(0);
++      float outputrate = getOutputFrameRate();
++      uint16_t vintotal = GBS::STATUS_SYNC_PROC_VTOTAL::read();
++      uint16_t vouttotal;
++      uint8_t framenum = GBS::STATUS_VDS_FIELD::read();
++
++      if (framenum % 2 != 0) return;
++
++      if (vintotal == 0 || sourcerate == 0) {
++        sprintf(outputtemp, "@@no signal\n");
++      }
++      else {
++        if (type == 'i') {
++          vintotal = vintotal * 2;
++          sourcerate = sourcerate / 2;
++        }
++
++        if (GBS::GBS_PRESET_CUSTOM::read() == 0)
++          rto->presetBaseID = rto->presetID;
++
++        if (rto->presetBaseID == 0x01 || rto->presetBaseID == 0x11)       vouttotal = 960;
++        else if (rto->presetBaseID == 0x02 || rto->presetBaseID == 0x12)  vouttotal = 1024;
++        else if (rto->presetBaseID == 0x03 || rto->presetBaseID == 0x13)  vouttotal = 720;
++        else if (rto->presetBaseID == 0x05 || rto->presetBaseID == 0x15)  vouttotal = 1080;
++        else if (rto->presetBaseID == 0x06 || rto->presetBaseID == 0x16)  vouttotal = 240;
++        else if (rto->presetBaseID == 0x04                             )  vouttotal = 480;
++        else if (rto->presetBaseID == 0x14                             )  vouttotal = 576;
++        else                                                              vouttotal = 0;
++
++        if (vouttotal == 0) {
++          sprintf(outputtemp, "@@passthrough\n");
++        }
++        else {
++          sprintf(outputtemp, "@@%d|%d|%4u%c%.2f|%4up%.2f\n", rto->inputIsYpBpR, interlace, vintotal, type, sourcerate, vouttotal, outputrate);  
++        }
++      }
++    }
++    else {
++      sprintf(outputtemp, "@@no signal\n");
++    }
++  
++    if (memcmp(output, outputtemp, sizeof(outputtemp)) != 0) {
++      memcpy(output, outputtemp, sizeof(outputtemp));
++      Serial.println(outputtemp);
++      lastoutputtime = millis();
++    }    
++  }
++}
++
++#endif
