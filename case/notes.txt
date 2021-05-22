@@ -4,6 +4,8 @@ Notes:
 
 Parts used:
 - WeMos d1 mini
+- Si5351 breakout board
+- VGA2HDMI adapter
 - 128X64 OLED 0.96" I2C - yellow/blue double color
 - 3.3V8M Pro Mini ATmega328 diymore.cc
 - 2 schottky diodes (2x BAT48 were laying around)
