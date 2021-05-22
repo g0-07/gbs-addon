@@ -1,0 +1,19 @@
+Notes:
+- socket for VGA2HDMI should be better designed (e.g. own socket for HDMI connector, bigger socket for adapter - fixed with hotglue)
+- 3.5mm audio-hole is not correctly positioned
+
+Parts used:
+- WeMos d1 mini
+- 128X64 OLED 0.96" I2C - yellow/blue double color
+- 3.3V8M Pro Mini ATmega328 diymore.cc
+- 2 schottky diodes (2x BAT48 were laying around)
+- Recycled IR receiver
+- Recycled VGA connector
+- Recycled JST connector
+- 2 RCA chassis sockets
+- 2 toggle switches
+- Scart connector
+- M3 nuts/screws
+- M3 spacers (M3_FF_20_MM - https://www.thingiverse.com/thing:2804710/files)
+ 
+
